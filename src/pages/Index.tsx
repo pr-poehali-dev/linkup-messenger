@@ -520,6 +520,328 @@ function NotifPanel({ notifs, onRead }: { notifs: Notification[]; onRead: (id: s
   );
 }
 
+// ─── Promo Panel ─────────────────────────────────────────────────────────────
+
+const PROMO_URL = "https://functions.poehali.dev/77142137-beee-4a14-970f-34910212ffd3";
+
+const PROMO_TYPES: Record<string, { label: string; color: string }> = {
+  welcome:   { label: "Приветственный", color: "text-green-400"  },
+  seasonal:  { label: "Сезонный",       color: "text-blue-400"   },
+  event:     { label: "Событийный",     color: "text-yellow-400" },
+  technical: { label: "Технический",    color: "text-purple-400" },
+  referral:  { label: "Реферальный",    color: "text-pink-400"   },
+  partner:   { label: "Партнёрский",    color: "text-orange-400" },
+  fixed:     { label: "Стандартный",    color: "text-gray-400"   },
+  special:   { label: "Особый",         color: "text-gold"       },
+};
+
+interface PromoReward {
+  description: string;
+  links: number;
+  badge: string | null;
+  status: string | null;
+}
+
+interface PromoActivation {
+  reward: string;
+  activated_at: string;
+  type: string;
+}
+
+function PromoPanel() {
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
+  const [message, setMessage] = useState("");
+  const [reward, setReward] = useState<PromoReward | null>(null);
+  const [history, setHistory] = useState<PromoActivation[]>([]);
+  const [histLoading, setHistLoading] = useState(false);
+  const [failCount, setFailCount] = useState(0);
+  const [blockedUntil, setBlockedUntil] = useState<number | null>(null);
+  const [refCode, setRefCode] = useState<string | null>(null);
+  const [tab, setTab] = useState<"activate" | "history" | "referral">("activate");
+
+  const isBlocked = blockedUntil !== null && Date.now() < blockedUntil;
+
+  const handleActivate = async () => {
+    if (isBlocked) return;
+    const trimmed = code.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+    if (!trimmed) { setStatus("error"); setMessage("Введите промокод"); return; }
+    setLoading(true);
+    setStatus("idle");
+    setReward(null);
+    try {
+      const res = await fetch(PROMO_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-User-Id": "alex_kim" },
+        body: JSON.stringify({ action: "activate", code: trimmed }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStatus("success");
+        setMessage("Промокод активирован!");
+        setReward(data.reward);
+        setCode("");
+        setFailCount(0);
+      } else {
+        const newFails = failCount + 1;
+        setFailCount(newFails);
+        if (newFails >= 3) {
+          setBlockedUntil(Date.now() + 5 * 60 * 1000);
+          setMessage("3 неудачных попытки. Блокировка на 5 минут.");
+        } else {
+          setMessage(data.error || "Код недействителен");
+        }
+        setStatus("error");
+      }
+    } catch {
+      setStatus("error");
+      setMessage("Ошибка соединения");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadHistory = async () => {
+    setHistLoading(true);
+    try {
+      const res = await fetch(PROMO_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-User-Id": "alex_kim" },
+        body: JSON.stringify({ action: "my" }),
+      });
+      const data = await res.json();
+      setHistory(data.activations || []);
+    } catch { setHistory([]); }
+    finally { setHistLoading(false); }
+  };
+
+  const generateReferral = async () => {
+    try {
+      const res = await fetch(PROMO_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-User-Id": "alex_kim" },
+        body: JSON.stringify({ action: "referral" }),
+      });
+      const data = await res.json();
+      setRefCode(data.code);
+    } catch { setRefCode(null); }
+  };
+
+  useEffect(() => {
+    if (tab === "history") loadHistory();
+  }, [tab]);
+
+  const EXAMPLE_CODES = ["WELCOME2024", "WINTER2024", "HAKATON_WIN", "DEV_TEST_777", "SHADOW_RISE"];
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5 space-y-4">
+      {/* Tabs */}
+      <div className="flex gap-1 bg-navy border border-border rounded-xl p-1">
+        {[
+          { id: "activate" as const, label: "Активация", icon: "Tag" },
+          { id: "history"  as const, label: "История",   icon: "Clock" },
+          { id: "referral" as const, label: "Реферал",   icon: "UserPlus" },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all
+              ${tab === t.id ? "bg-navy-light text-gold border border-border" : "text-muted-foreground hover:text-foreground"}`}>
+            <Icon name={t.icon} size={12} />{t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Activate tab ── */}
+      {tab === "activate" && (
+        <>
+          <div className="bg-navy-mid border border-border rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <Icon name="Lock" size={14} className="text-gold" />
+              <h3 className="text-sm font-semibold text-foreground">Защищённое поле ввода</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">Код знает только владелец аккаунта — не передавайте его третьим лицам.</p>
+
+            {isBlocked ? (
+              <div className="bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-3 text-sm text-destructive text-center">
+                <Icon name="Ban" size={16} className="mx-auto mb-1" />
+                Блокировка на 5 минут после 3 ошибок
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  type="password"
+                  value={code}
+                  onChange={e => {
+                    setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "").slice(0, 20));
+                    setStatus("idle");
+                  }}
+                  onKeyDown={e => e.key === "Enter" && handleActivate()}
+                  placeholder="ВВЕДИТЕ КОД..."
+                  maxLength={20}
+                  autoComplete="off"
+                  className={`w-full bg-navy border rounded-xl px-4 py-3 pr-10 text-sm font-mono tracking-widest text-foreground placeholder:text-muted-foreground outline-none transition-all
+                    ${status === "success" ? "border-green-500/50" : status === "error" ? "border-destructive/50" : "border-border focus:border-gold/50"}`}
+                />
+                <Icon name="Lock" size={14} className="absolute right-3 top-3.5 text-muted-foreground" />
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Icon name="Info" size={11} />
+              <span>Латинские буквы, цифры, нижнее подчёркивание. Макс. 20 символов.</span>
+            </div>
+
+            {status !== "idle" && (
+              <div className={`flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm animate-fade-in
+                ${status === "success" ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-destructive/10 border border-destructive/20 text-destructive"}`}>
+                <Icon name={status === "success" ? "CheckCircle" : "XCircle"} size={16} className="mt-0.5 flex-shrink-0" />
+                <span>{message}</span>
+              </div>
+            )}
+
+            {reward && (
+              <div className="bg-navy border border-gold/30 rounded-xl p-4 space-y-2 animate-fade-in">
+                <p className="text-xs font-semibold text-gold flex items-center gap-1.5"><Icon name="Gift" size={13} />Награда получена:</p>
+                <p className="text-sm text-foreground">{reward.description}</p>
+                {reward.links > 0 && (
+                  <p className="text-gold font-mono font-bold text-lg">+{reward.links} ₾</p>
+                )}
+                {reward.badge && (
+                  <span className="inline-flex items-center gap-1 bg-navy-light border border-border rounded px-2 py-1 text-xs text-foreground">
+                    <Icon name="Award" size={11} className="text-gold" />{reward.badge}
+                  </span>
+                )}
+              </div>
+            )}
+
+            <button onClick={handleActivate} disabled={loading || isBlocked || !code.trim()}
+              className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold transition-all disabled:opacity-30 hover:opacity-90 flex items-center justify-center gap-2">
+              {loading ? <Icon name="Loader" size={15} className="animate-spin" /> : <Icon name="Zap" size={15} />}
+              {loading ? "Проверяю..." : "Активировать"}
+            </button>
+          </div>
+
+          {/* Examples */}
+          <div className="bg-navy-mid border border-border rounded-xl p-4">
+            <p className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Icon name="Sparkles" size={13} className="text-gold" />Примеры кодов (нажмите для вставки)
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {EXAMPLE_CODES.map(c => (
+                <button key={c} onClick={() => { setCode(c); setStatus("idle"); }}
+                  className="font-mono text-xs text-gold bg-navy border border-border rounded-lg px-2.5 py-1.5 hover:border-gold/40 transition-colors">
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Types info */}
+          <div className="bg-navy-mid border border-border rounded-xl p-4">
+            <p className="text-xs font-semibold text-foreground mb-3">Типы промокодов</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {Object.entries(PROMO_TYPES).map(([, v]) => (
+                <div key={v.label} className="flex items-center gap-2 text-xs">
+                  <span className={`w-1.5 h-1.5 rounded-full bg-current ${v.color}`} />
+                  <span className="text-muted-foreground">{v.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── History tab ── */}
+      {tab === "history" && (
+        <div className="bg-navy-mid border border-border rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+            <span className="text-sm font-semibold text-foreground">Активированные коды</span>
+            <button onClick={loadHistory} className="text-muted-foreground hover:text-foreground transition-colors">
+              <Icon name="RefreshCw" size={14} />
+            </button>
+          </div>
+          {histLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Icon name="Loader" size={20} className="text-muted-foreground animate-spin" />
+            </div>
+          ) : history.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
+              <Icon name="Tag" size={28} className="opacity-20" />
+              <p className="text-xs">Промокоды не активированы</p>
+            </div>
+          ) : (
+            history.map((h, i) => {
+              const typeInfo = PROMO_TYPES[h.type] || PROMO_TYPES.fixed;
+              return (
+                <div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0">
+                  <div className="w-8 h-8 rounded-lg bg-navy-light border border-border flex items-center justify-center flex-shrink-0">
+                    <Icon name="CheckCircle" size={16} className="text-green-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-foreground truncate">{h.reward}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className={`text-xs ${typeInfo.color}`}>{typeInfo.label}</span>
+                      <span className="text-xs text-muted-foreground">{new Date(h.activated_at).toLocaleDateString("ru")}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ── Referral tab ── */}
+      {tab === "referral" && (
+        <div className="space-y-4">
+          <div className="bg-navy-mid border border-border rounded-xl p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Icon name="UserPlus" size={14} className="text-gold" />Реферальная программа
+            </h3>
+            <p className="text-xs text-muted-foreground">Приглашайте друзей и получайте <span className="text-gold font-mono">20 ₾</span> за каждого активного пользователя.</p>
+            {refCode ? (
+              <div className="bg-navy border border-gold/30 rounded-xl p-3">
+                <p className="text-xs text-muted-foreground mb-1">Ваш реферальный код:</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-gold font-mono text-sm bg-navy-light border border-border rounded-lg px-3 py-2">{refCode}</code>
+                  <button onClick={() => navigator.clipboard.writeText(refCode)}
+                    className="w-8 h-8 rounded-lg bg-navy-light border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                    <Icon name="Copy" size={14} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={generateReferral}
+                className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-all flex items-center justify-center gap-2">
+                <Icon name="Link" size={15} />Сгенерировать мой реферальный код
+              </button>
+            )}
+          </div>
+
+          <div className="bg-navy-mid border border-border rounded-xl p-4">
+            <p className="text-xs font-semibold text-foreground mb-3">Где получить промокоды</p>
+            <div className="space-y-2 text-xs text-muted-foreground">
+              {[
+                ["Божественный Вестник", "Ghost"],
+                ["Рассылки ИИ «Оракул»", "Bot"],
+                ["События платформы", "Calendar"],
+                ["Партнёры (GitHub, Discord)", "Link"],
+                ["Реферальная программа", "UserPlus"],
+                ["Сезонные фестивали", "Sparkles"],
+              ].map(([label, icon]) => (
+                <div key={label} className="flex items-center gap-2">
+                  <Icon name={icon} size={12} className="text-gold flex-shrink-0" />
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Settings Panel ───────────────────────────────────────────────────────────
 
 function SettingsPanel() {
@@ -603,15 +925,23 @@ function HierarchyPanel() {
       <h3 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
         <Icon name="Layers" size={15} className="text-gold" /> Иерархия статусов
       </h3>
-      {tiers.map(t => {
+      {tiers.map((t, idx) => {
         const m = STATUS_META[t];
+        const isTop = idx === 0;
         return (
-          <div key={t} className="bg-navy-mid border border-border rounded-xl p-4 space-y-2">
+          <div key={t} className={`rounded-xl p-4 space-y-2 border ${isTop ? "bg-gradient-to-br from-purple-950/60 to-navy-mid border-purple-700/40" : "bg-navy-mid border-border"}`}>
             <div className="flex items-center justify-between">
-              <StatusBadge status={t} />
+              <div className="flex items-center gap-2">
+                <StatusBadge status={t} />
+                {isTop && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-purple-900/50 border border-purple-700/50 text-purple-300">
+                    ★ ВЫСШИЙ
+                  </span>
+                )}
+              </div>
               <span className="text-xs text-muted-foreground">{m.slots}</span>
             </div>
-            <code className="block text-xs font-mono text-gold bg-navy px-2.5 py-2 rounded border border-border">{m.code}</code>
+            <code className={`block text-xs font-mono bg-navy px-2.5 py-2 rounded border border-border ${isTop ? "text-purple-300" : "text-gold"}`}>{m.code}</code>
           </div>
         );
       })}
@@ -704,7 +1034,29 @@ export default function Index() {
           {section === "contacts" && <ContactsPanel onStartChat={handleStartChat} />}
           {section === "notifications" && <NotifPanel notifs={notifs} onRead={id => setNotifs(p => p.map(n => n.id === id ? { ...n, read: true } : n))} />}
           {section === "profile" && <ProfilePanel />}
-          {section === "settings" && <SettingsPanel />}
+          {section === "settings" && (
+            <div className="flex-1 overflow-y-auto">
+              <div className="px-3 py-2">
+                <p className="text-xs text-muted-foreground px-1 py-2">Разделы настроек</p>
+                {[
+                  { icon: "Tag",     label: "Промокоды",        sub: "Активация и история"   },
+                  { icon: "Shield",  label: "Безопасность",     sub: "2FA, шифрование"       },
+                  { icon: "Terminal",label: "Команды",           sub: "Список всех команд"    },
+                  { icon: "Server",  label: "Инфраструктура",   sub: "Данные о платформе"    },
+                ].map(item => (
+                  <div key={item.label} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-navy-mid cursor-pointer transition-colors border border-transparent hover:border-border mb-1">
+                    <div className="w-8 h-8 rounded-lg bg-navy-light border border-border flex items-center justify-center flex-shrink-0">
+                      <Icon name={item.icon} size={15} className="text-gold" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{item.label}</p>
+                      <p className="text-xs text-muted-foreground">{item.sub}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -730,10 +1082,10 @@ export default function Index() {
         ) : section === "settings" ? (
           <div className="flex flex-col h-full overflow-hidden">
             <div className="px-5 py-3.5 border-b border-border bg-navy flex-shrink-0">
-              <h2 className="font-semibold text-foreground">Безопасность и конфигурация</h2>
-              <p className="text-xs text-muted-foreground">linkup.io · @LinkUpOfficial · support@linkup.io</p>
+              <h2 className="font-semibold text-foreground">Промокоды</h2>
+              <p className="text-xs text-muted-foreground">Активируйте коды для получения бонусов, значков и привилегий</p>
             </div>
-            <SettingsPanel />
+            <PromoPanel />
           </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3">

@@ -1,0 +1,52 @@
+{
+  "tests": [
+    {
+      "name": "Health check",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": { "ok": true },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Activate valid promo",
+      "method": "POST",
+      "path": "/",
+      "headers": { "X-User-Id": "test_activate_001" },
+      "body": { "action": "activate", "code": "FREE_LINKS" },
+      "expectedStatus": 200,
+      "expectedBody": { "success": true },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Activate invalid promo",
+      "method": "POST",
+      "path": "/",
+      "headers": { "X-User-Id": "test_invalid_001" },
+      "body": { "action": "activate", "code": "INVALID_XXXX" },
+      "expectedStatus": 404,
+      "expectedBody": { "success": false },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get my promos",
+      "method": "POST",
+      "path": "/",
+      "headers": { "X-User-Id": "test_activate_001" },
+      "body": { "action": "my" },
+      "expectedStatus": 200,
+      "expectedBody": { "activations": [] },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Generate referral",
+      "method": "POST",
+      "path": "/",
+      "headers": { "X-User-Id": "test_ref_001" },
+      "body": { "action": "referral" },
+      "expectedStatus": 200,
+      "expectedBody": { "code": "string" },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
